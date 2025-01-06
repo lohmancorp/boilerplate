@@ -1,0 +1,1116 @@
+{
+	"swagger":"2.0",
+	"info":{
+		"version":"1.0.0",
+		"title":"RBAC Boilerplate App API Documentation",
+		"description":"API for managing users, roles, and authentication.\n\n### Authentication\n This application uses JWT authentication for all API calls, except for `/api/login`. Once you have received a JWT token, please use the 'Authorize' button at the top of this page to apply it automatically to all endpoints.\n\n### Versioning\nInclude the `X-API-Version` header for API versioning (e.g., `1.0`).",
+		"contact":{
+			"name":"API Support",
+			"url":"http://www.lohmancorp.com/",
+			"email":"taylor@lohmancorp.com"
+		},
+		"license":{
+			"name":"MIT License",
+			"url":"https://opensource.org/licenses/MIT"
+		}
+	},
+	"host":"localhost:5000",
+	"basePath":"/api/",
+	"schemes":[
+		"http"
+	],
+	"tags":[
+		{
+			"name":"Authentication",
+			"description":"Endpoints for user authentication and token management."
+		},
+		{
+			"name":"User Management",
+			"description":"Endpoints for managing users, including creation, update, and deletion."
+		},
+		{
+			"name":"Roles Management",
+			"description":"Endpoints for managing roles and permissions."
+		}
+	],
+	"securityDefinitions":{
+		"BearerAuth":{
+			"type":"apiKey",
+			"name":"Authorization",
+			"in":"header"
+		}
+	},
+	"security":[
+		{
+			"BearerAuth":[
+				
+			]
+		}
+	],
+	"parameters":{
+		"AuthorizationHeader":{
+			"name":"Authorization",
+			"in":"header",
+			"required":true,
+			"type":"string",
+			"description":"Bearer <JWT Token>"
+		},
+		"APIVersionHeader":{
+			"name":"X-API-Version",
+			"in":"header",
+			"required":false,
+			"type":"string",
+			"description":"Specify the API version, e.g., `1.0`"
+		}
+	},
+	"definitions":{
+		"User":{
+			"type":"object",
+			"properties":{
+				"id":{
+					"type":"integer",
+					"example":1
+				},
+				"first_name":{
+					"type":"string",
+					"example":"John"
+				},
+				"last_name":{
+					"type":"string",
+					"example":"Doe"
+				},
+				"email":{
+					"type":"string",
+					"example":"john.doe@example.com",
+					"description":"Unique email for the user."
+				},
+				"username":{
+					"type":"string",
+					"example":"john.doe@example.com",
+					"description":"Unique username for the user and matches the email."
+				},
+				"password":{
+					"type":"string",
+					"example":"hashed_password",
+					"description":"The hashed password for the user."
+				},
+				"confirm_password":{
+					"type":"string",
+					"example":"hashed_password",
+					"description":"A repeated password value to confirm user intent during password creation."
+				},
+				"roles":{
+					"type":"array",
+					"items":{
+						"$ref":"#/definitions/Role"
+					},
+					"description":"Roles assigned to the user."
+				}
+			},
+			"required":[
+				"first_name",
+				"last_name",
+				"email",
+				"username",
+				"password",
+				"confirm_password"
+			]
+		},
+		"Role":{
+			"type":"object",
+			"properties":{
+				"id":{
+					"type":"integer",
+					"example":1
+				},
+				"name":{
+					"type":"string",
+					"example":"Admin"
+				},
+				"allowed_routes":{
+					"type":"array",
+					"items":{
+						"$ref":"#/definitions/RolePermission"
+					},
+					"description":"Routes and methods the role is permitted to access."
+				}
+			},
+			"required":[
+				"name"
+			]
+		},
+		"RolePermission":{
+			"type":"object",
+			"properties":{
+				"id":{
+					"type":"integer",
+					"example":1
+				},
+				"route":{
+					"type":"string",
+					"example":"/api/users",
+					"description":"API route the permission applies to."
+				},
+				"method":{
+					"type":"string",
+					"example":"GET",
+					"description":"HTTP method the permission allows."
+				},
+				"role_id":{
+					"type":"integer",
+					"example":1,
+					"description":"ID of the role associated with this permission."
+				}
+			},
+			"required":[
+				"route",
+				"method",
+				"role_id"
+			]
+		},
+		"UserRole":{
+			"type":"object",
+			"properties":{
+				"user_id":{
+					"type":"integer",
+					"example":1,
+					"description":"ID of the user."
+				},
+				"role_id":{
+					"type":"integer",
+					"example":1,
+					"description":"ID of the role."
+				}
+			},
+			"required":[
+				"user_id",
+				"role_id"
+			]
+		},
+		"ErrorResponse":{
+			"type":"object",
+			"properties":{
+				"message":{
+					"type":"string",
+					"example":"Invalid input"
+				}
+			}
+		}
+	},
+	"paths":{
+		"/login":{
+			"post":{
+				"summary":"Authenticate a user",
+				"tags":[
+					"Authentication"
+				],
+				"parameters":[
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"username":{
+									"type":"string"
+								},
+								"password":{
+									"type":"string"
+								}
+							},
+							"required":[
+								"username",
+								"password"
+							]
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Login successful",
+						"schema":{
+							"type":"object",
+							"properties":{
+								"access_token":{
+									"type":"string"
+								}
+							}
+						}
+					},
+					"400":{
+						"description":"Username and password are required",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"401":{
+						"description":"Invalid credentials",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+    "/session/extend": {
+      "post": {
+        "summary": "Extend the current session",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "extendSession",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "type": "string",
+            "description": "Bearer <JWT Token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session successfully extended",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "msg": {
+                  "type": "string",
+                  "example": "Session extended"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/session/logout": {
+      "post": {
+        "summary": "End the current session",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "logoutSession",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "type": "string",
+            "description": "Bearer <JWT Token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session successfully ended",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "msg": {
+                  "type": "string",
+                  "example": "Session ended"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "Retrieve a list of users",
+        "tags": [
+          "User Management"
+        ],
+        "operationId": "listUsers",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "type": "string",
+            "description": "Bearer <JWT Token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users retrieved successfully",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/User"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new user",
+        "tags": [
+          "User Management"
+        ],
+        "operationId": "createUser",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "type": "string",
+            "description": "Bearer <JWT Token>"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "type": "string"
+                },
+                "last_name": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "confirm_password": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "first_name",
+                "last_name",
+                "username",
+                "password",
+                "confirm_password",
+                "email"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "schema": {
+              "$ref": "#/definitions/User"
+            }
+          },
+          "400": {
+            "description": "Invalid input (e.g., missing fields, passwords do not match, or password does not meet complexity requirements)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Username or email is not available",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+		"/users/{user_id}":{
+			"put":{
+				"summary":"Update a user",
+				"tags":[
+					"User Management"
+				],
+				"operationId":"updateUserById",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"user_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the user to update"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"first_name":{
+									"type":"string"
+								},
+								"last_name":{
+									"type":"string"
+								},
+								"email":{
+									"type":"string"
+								},
+								"username":{
+									"type":"string"
+								},
+								"new_password":{
+									"type":"string"
+								},
+								"confirm_password":{
+									"type":"string"
+								}
+							},
+							"required":[
+								"first_name",
+								"last_name",
+								"username"
+							]
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"User updated successfully",
+						"schema":{
+							"$ref":"#/definitions/User"
+						}
+					},
+					"400":{
+						"description":"Invalid input (e.g., passwords do not match or password does not meet complexity requirements)",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"User not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/users/self":{
+			"put":{
+				"summary":"Update your own profile",
+				"tags":[
+					"User Management"
+				],
+				"operationId":"updateOwnProfile",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"first_name":{
+									"type":"string"
+								},
+								"last_name":{
+									"type":"string"
+								},
+								"email":{
+									"type":"string"
+								},
+								"username":{
+									"type":"string"
+								},
+								"new_password":{
+									"type":"string"
+								},
+								"confirm_password":{
+									"type":"string"
+								}
+							},
+							"required":[
+								"first_name",
+								"last_name",
+								"username"
+							]
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Your profile has been updated successfully",
+						"schema":{
+							"$ref":"#/definitions/User"
+						}
+					},
+					"400":{
+						"description":"Invalid input (e.g., passwords do not match or password does not meet complexity requirements)",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"User not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/add-role":{
+			"post":{
+				"summary":"Assign a role to a user",
+				"tags":[
+					"User Management"
+				],
+				"operationId":"assignRoleToUser",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"user_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the user"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"role_id":{
+									"type":"integer"
+								}
+							},
+							"required":[
+								"role_id"
+							]
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Role added to user successfully"
+					},
+					"400":{
+						"description":"Role already assigned to user",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"User or Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/remove-role":{
+			"post":{
+				"summary":"Remove a role from a user",
+				"tags":[
+					"User Management"
+				],
+				"operationId":"removeRoleFromUser",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"user_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the user"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"role_id":{
+									"type":"integer"
+								}
+							},
+							"required":[
+								"role_id"
+							]
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Role removed from user successfully"
+					},
+					"400":{
+						"description":"Role not assigned to user",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"User or Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/roles/methods":{
+			"get":{
+				"summary":"List all available methods",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"listAllMethods",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"List of methods",
+						"schema":{
+							"type":"object",
+							"properties":{
+								"methods":{
+									"type":"object",
+									"additionalProperties":{
+										"type":"array",
+										"items":{
+											"type":"string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/roles":{
+			"get":{
+				"summary":"List all roles",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"listRoles",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"List of roles",
+						"schema":{
+							"type":"array",
+							"items":{
+								"type":"object",
+								"properties":{
+									"id":{
+										"type":"integer"
+									},
+									"name":{
+										"type":"string"
+									},
+									"allowed_routes":{
+										"oneOf":[
+											{
+												"type":"string",
+												"enum":[
+													"*"
+												]
+											},
+											{
+												"type":"object",
+												"additionalProperties":{
+													"type":"string"
+												}
+											}
+										]
+									},
+									"users":{
+										"type":"array",
+										"items":{
+											"type":"string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"post":{
+				"summary":"Create a new role",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"createRole",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"name":{
+									"type":"string"
+								}
+							},
+							"required":[
+								"name"
+							]
+						}
+					}
+				],
+				"responses":{
+					"201":{
+						"description":"Role created successfully",
+						"schema":{
+							"type":"object",
+							"properties":{
+								"id":{
+									"type":"integer"
+								},
+								"name":{
+									"type":"string"
+								}
+							}
+						}
+					},
+					"400":{
+						"description":"Role with this name already exists",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/roles/{role_id}":{
+			"get":{
+				"summary":"Retrieve a role by ID",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"getRoleById",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"role_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the role to retrieve"
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Role details",
+						"schema":{
+							"type":"object",
+							"properties":{
+								"id":{
+									"type":"integer"
+								},
+								"name":{
+									"type":"string"
+								},
+								"allowed_routes":{
+									"oneOf":[
+										{
+											"type":"string"
+										},
+										{
+											"type":"object",
+											"additionalProperties":{
+												"type":"string"
+											}
+										}
+									]
+								},
+								"users":{
+									"type":"array",
+									"items":{
+										"type":"string"
+									}
+								}
+							}
+						}
+					},
+					"404":{
+						"description":"Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			},
+			"put":{
+				"summary":"Edit a role by ID",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"editRoleById",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"role_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the role to edit"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"object",
+							"properties":{
+								"name":{
+									"type":"string"
+								}
+							}
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Role updated successfully"
+					},
+					"404":{
+						"description":"Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			},
+			"delete":{
+				"summary":"Delete a role by ID",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"deleteRoleById",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"role_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the role to delete"
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Role deleted successfully"
+					},
+					"404":{
+						"description":"Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/roles/{role_id}/add-permission":{
+			"post":{
+				"summary":"Add permissions to a role",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"addPermissionsToRole",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"role_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the role"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"array",
+							"items":{
+								"type":"object",
+								"properties":{
+									"route":{
+										"type":"string"
+									},
+									"method":{
+										"type":"string"
+									}
+								},
+								"required":[
+									"route",
+									"method"
+								]
+							}
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Permissions added successfully"
+					},
+					"400":{
+						"description":"Bad request",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		},
+		"/roles/{role_id}/remove-permission":{
+			"post":{
+				"summary":"Remove permissions from a role",
+				"tags":[
+					"Roles Management"
+				],
+				"operationId":"removePermissionsFromRole",
+				"parameters":[
+					{
+						"name":"Authorization",
+						"in":"header",
+						"type":"string",
+						"description":"Bearer <JWT Token>"
+					},
+					{
+						"name":"role_id",
+						"in":"path",
+						"required":true,
+						"type":"integer",
+						"description":"ID of the role"
+					},
+					{
+						"in":"body",
+						"name":"body",
+						"required":true,
+						"schema":{
+							"type":"array",
+							"items":{
+								"type":"object",
+								"properties":{
+									"route":{
+										"type":"string"
+									},
+									"method":{
+										"type":"string"
+									}
+								},
+								"required":[
+									"route",
+									"method"
+								]
+							}
+						}
+					}
+				],
+				"responses":{
+					"200":{
+						"description":"Permissions removed successfully"
+					},
+					"400":{
+						"description":"Bad request",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					},
+					"404":{
+						"description":"Role not found",
+						"schema":{
+							"$ref":"#/definitions/ErrorResponse"
+						}
+					}
+				}
+			}
+		}
+	}
+}
