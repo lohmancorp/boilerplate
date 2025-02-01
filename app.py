@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import (
     JWTManager, jwt_required, get_jwt, unset_jwt_cookies, create_access_token, set_access_cookies
@@ -16,12 +16,14 @@ from pathlib import Path
 from argon2 import PasswordHasher
 from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy.dialects.postgresql import JSON
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from functools import wraps  # Required for decorators
 from flask import has_app_context, has_request_context
 from werkzeug.serving import WSGIRequestHandler
 from threading import local
 from datetime import timedelta
+from email_validator import validate_email, EmailNotValidError
+
 
 LOG_DIRECTORY = './logs/'
 SCRIPT_NAME = 'cbnotices'
@@ -125,6 +127,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = '<jwt_secret_key>'
 app.config['LOGGING_LEVEL'] = 'INFO'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)
+app.config['JSON_SORT_KEYS'] = False
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
 
 db = SQLAlchemy(app)
@@ -171,10 +174,6 @@ def log_teardown_request(error=None):
     else:
         logging.info(f"Request teardown completed")
 
-# Escape function to prevent SQL injection
-def escape_input(value):
-    return re.sub(r'[;\\\"\'%]', '', value)
-
 # Mask sensitive data for logs
 def mask_sensitive_data(data):
     return data[:2] + "****" if len(data) > 2 else "****"
@@ -207,7 +206,6 @@ class Role(db.Model):
         cascade="all, delete-orphan"
     )
 
-
 class User(db.Model):
     __tablename__ = 'user'
 
@@ -225,7 +223,6 @@ class User(db.Model):
         cascade="all, delete-orphan"
     )
 
-
 class RolePermission(db.Model):
     __tablename__ = 'role_permissions'
 
@@ -236,7 +233,6 @@ class RolePermission(db.Model):
 
     # Relationship back to Role
     role = db.relationship('Role', back_populates='allowed_routes')
-
 
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
@@ -250,7 +246,6 @@ class UserRole(db.Model):
     role = db.relationship('Role', back_populates='users')
 
 # Utility Functions
-
 # Function to extend session key
 def extend_session():
     """Extend the session key for the authenticated user."""
@@ -338,6 +333,25 @@ def role_required():
             return f(*args, **kwargs)
         return wrapper
     return decorator
+
+def is_valid_email(email):
+    """
+    Validates an email address using a regex pattern.
+    
+    This regex ensures that the email has a basic structure of:
+    some_characters@some_domain.extension
+    
+    Returns:
+        True if the email matches the pattern, False otherwise.
+    """
+    # This is a basic regex pattern for email validation.
+    # For production use, consider a more robust solution such as the `email-validator` package.
+    try:
+        # Validate and normalize the email address
+        validate_email(email)
+        return True
+    except EmailNotValidError:
+        return False
 
 #  Match a database route (with placeholders) to an actual route.
 def match_route(db_route, actual_route):
@@ -441,21 +455,37 @@ def extend_session():
 @jwt_required()
 @role_required()
 def list_users():
-    users = User.query.all()
-    return jsonify([{
-        "id": user.id,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "username": user.username,
-        "roles": [
-            {
-                "id": user_role.role.id,
-                "name": user_role.role.name
-            }
-            for user_role in user.roles
-        ]
-    } for user in users]), 200
+    # Ensure users are sorted by id in ascending order.
+    users = User.query.order_by(User.id.asc()).all()
+    
+    result = []
+    for user in users:
+        # Create an OrderedDict for the user with the desired key order.
+        user_data = OrderedDict([
+            ("id", user.id),
+            ("first_name", user.first_name),
+            ("last_name", user.last_name),
+            ("email", user.email),
+            ("username", user.username)
+        ])
+        
+        # Build an ordered list for the user's roles.
+        roles = []
+        for user_role in user.roles:
+            role_data = OrderedDict([
+                ("id", user_role.role.id),
+                ("name", user_role.role.name)
+            ])
+            roles.append(role_data)
+        
+        # Add the roles to the user data.
+        user_data["roles"] = roles
+        result.append(user_data)
+    
+    # Serialize to JSON without sorting keys and return a custom response.
+    json_output = json.dumps(result, sort_keys=False)
+    return Response(json_output, mimetype='application/json')
+
 
 @app.route('/api/users', methods=['POST'])
 @jwt_required()
@@ -471,6 +501,10 @@ def register():
     # Validate inputs
     if not all([username, password, confirm_password, first_name, last_name, email]):
         return jsonify({"msg": "All fields (username, password, confirm_password, first_name, last_name, email) are required"}), 400
+
+    # Validate email format
+    if not is_valid_email(email):
+        return jsonify({"msg": "Invalid email format"}), 400
 
     if password != confirm_password:
         return jsonify({"msg": "Passwords do not match"}), 400
@@ -508,21 +542,34 @@ def register():
 def get_user(user_id):
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"message": "User not found"}), 404
-    return jsonify({
-        "id": user.id,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "username": user.username,
-        "roles": [
-            {
-                "id": user_role.role.id,
-                "name": user_role.role.name
-            }
-            for user_role in user.roles
-        ]
-    }), 200
+        # You can also use an OrderedDict here if you want consistent ordering for error responses.
+        error_response = OrderedDict([("message", "User not found")])
+        return Response(json.dumps(error_response, sort_keys=False), status=404, mimetype='application/json')
+    
+    # Build the user data as an OrderedDict
+    user_data = OrderedDict([
+        ("id", user.id),
+        ("first_name", user.first_name),
+        ("last_name", user.last_name),
+        ("email", user.email),
+        ("username", user.username)
+    ])
+    
+    # Build the ordered list for the user's roles
+    roles = []
+    for user_role in user.roles:
+        role_data = OrderedDict([
+            ("id", user_role.role.id),
+            ("name", user_role.role.name)
+        ])
+        roles.append(role_data)
+    
+    # Add the roles to the user data
+    user_data["roles"] = roles
+
+    # Serialize the OrderedDict to JSON with sort_keys disabled
+    json_output = json.dumps(user_data, sort_keys=False)
+    return Response(json_output, status=200, mimetype='application/json')
 
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 @jwt_required()
@@ -534,10 +581,10 @@ def edit_user(user_id):
     if not user:
         return jsonify({"message": "User not found"}), 404
 
-    user.first_name = escape_input(data.get('first_name', user.first_name))
-    user.last_name = escape_input(data.get('last_name', user.last_name))
-    user.email = escape_input(data.get('email', user.email))
-    user.username = escape_input(data.get('username', user.username))
+    user.first_name = data.get('first_name', user.first_name)
+    user.last_name = data.get('last_name', user.last_name)
+    user.email = data.get('email', user.email)
+    user.username = data.get('username', user.username)
 
     # Handle password update only if both passwords are provided
     new_password = data.get('new_password')
@@ -565,10 +612,10 @@ def update_self():
         return jsonify({"message": "User not found"}), 404
 
     # Update only the allowed fields
-    user.first_name = escape_input(data.get('first_name', user.first_name))
-    user.last_name = escape_input(data.get('last_name', user.last_name))
-    user.email = escape_input(data.get('email', user.email))
-    user.username = escape_input(data.get('username', user.username))
+    user.first_name = data.get('first_name', user.first_name)
+    user.last_name = data.get('last_name', user.last_name)
+    user.email = data.get('email', user.email)
+    user.username = data.get('username', user.username)
 
     # Handle password update only if both passwords are provided
     new_password = data.get('new_password')
@@ -649,17 +696,30 @@ def get_methods():
 def list_roles():
     roles = Role.query.all()
     roles_data = []
+    
     for role in roles:
-        allowed_routes = "*" if not role.allowed_routes else {
-            permission.route: permission.method for permission in role.allowed_routes
-        }
-        roles_data.append({
-            "id": role.id,
-            "name": role.name,
-            "allowed_routes": allowed_routes,
-            "users": [ur.user.username for ur in UserRole.query.filter_by(role_id=role.id).all()]
-        })
-    return jsonify(roles_data), 200
+        # Build the allowed_routes value.
+        if not role.allowed_routes:
+            allowed_routes = "*"
+        else:
+            # Create an OrderedDict for allowed_routes. This will iterate in the
+            # natural order provided by the relationship.
+            allowed_routes = OrderedDict()
+            for permission in role.allowed_routes:
+                allowed_routes[permission.route] = permission.method
+        
+        # Build an OrderedDict for the role with keys in the desired order.
+        role_data = OrderedDict([
+            ("id", role.id),
+            ("name", role.name),
+            ("allowed_routes", allowed_routes),
+            ("users", [ur.user.username for ur in UserRole.query.filter_by(role_id=role.id).all()])
+        ])
+        roles_data.append(role_data)
+    
+    # Serialize to JSON without sorting keys
+    json_output = json.dumps(roles_data, sort_keys=False)
+    return Response(json_output, status=200, mimetype='application/json')
 
 @app.route('/api/roles', methods=['POST'])
 @jwt_required()
@@ -685,18 +745,30 @@ def create_role():
 def get_role(role_id):
     role = Role.query.get(role_id)
     if not role:
-        return jsonify({"message": "Role not found"}), 404
+        error_response = OrderedDict([("message", "Role not found")])
+        return Response(json.dumps(error_response, sort_keys=False),
+                        status=404,
+                        mimetype='application/json')
 
-    allowed_routes = "*" if not role.allowed_routes else {
-        permission.route: permission.method for permission in role.allowed_routes
-    }
+    # Build allowed_routes with ordered keys if permissions exist.
+    if not role.allowed_routes:
+        allowed_routes = "*"
+    else:
+        allowed_routes = OrderedDict()
+        for permission in role.allowed_routes:
+            allowed_routes[permission.route] = permission.method
 
-    return jsonify({
-        "id": role.id,
-        "name": role.name,
-        "allowed_routes": allowed_routes,
-        "users": [ur.user.username for ur in UserRole.query.filter_by(role_id=role.id).all()]
-    }), 200
+    # Build the role data as an OrderedDict.
+    role_data = OrderedDict([
+        ("id", role.id),
+        ("name", role.name),
+        ("allowed_routes", allowed_routes),
+        ("users", [ur.user.username for ur in UserRole.query.filter_by(role_id=role.id).all()])
+    ])
+    
+    # Serialize the OrderedDict to JSON without sorting keys.
+    json_output = json.dumps(role_data, sort_keys=False)
+    return Response(json_output, status=200, mimetype='application/json')
 
 @app.route('/api/roles/<int:role_id>', methods=['PUT'])
 @jwt_required()
